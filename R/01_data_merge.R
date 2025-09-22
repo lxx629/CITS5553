@@ -22,8 +22,8 @@ suppressPackageStartupMessages({
 })
 
 # paths
-in_dir  <- "data/raw/marine"
-out_dir <- "data/processed"
+in_dir  <- "data/raw"
+out_dir <- "data/merged"
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
 # read sources
