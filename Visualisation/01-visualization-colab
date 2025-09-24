@@ -1,0 +1,67 @@
+# This script is used on the Google colab to visualize the ocean species in the interactive map
+
+# install package in colab
+!pip -q install folium
+
+import pandas as pd, numpy as np, folium
+from folium.plugins import MarkerCluster
+
+# read the final merged dataset
+species_df = pd.read_csv("/content/new_final_species.csv")
+location_df = pd.read_csv("/content/location_data.csv")
+
+# combine the dataset
+df = location_df.merge(species_df, on="aphia_id", how="left")
+
+df = df[
+    df["mr_latitude"].between(-90, 90) &
+    df["mr_longitude"].between(-180, 180)
+].drop_duplicates(subset=["aphia_id","species_canonical","mr_latitude","mr_longitude"]).copy()
+
+def safe(v):
+    return "—" if (pd.isna(v) or v in ("-", "[]")) else str(v)
+
+def rng(a, b, unit=""):
+    a_ok = not (pd.isna(a) or a in ("-", "[]"))
+    b_ok = not (pd.isna(b) or b in ("-", "[]"))
+    if not a_ok and not b_ok:
+        return "— — —" if not unit else f"— — — {unit}".strip()
+    if a_ok and b_ok:
+        return f"{a} – {b}{(' ' + unit) if unit else ''}"
+    only = a if a_ok else b
+    return f"{only}{(' ' + unit) if unit else ''}"
+
+# make the interaction visualization
+m = folium.Map(
+    location=[df["mr_latitude"].median(), df["mr_longitude"].median()],
+    zoom_start=2, tiles="cartodbpositron"
+)
+cluster = MarkerCluster(name="Species Records").add_to(m)
+
+for _, r in df.iterrows():
+    popup_html = f"""
+    <div style='font-size:13px; line-height:1.35'>
+      <b>Species:</b> {safe(r.get('species_canonical'))}<br>
+      <b>Locality:</b> {safe(r.get('locality'))}<br>
+      <b>Region:</b> {safe(r.get('higherGeography'))}<br>
+      <b>Genus/Order/Family/Subfamily:</b> {safe(r.get('Genus'))} / {safe(r.get('order'))} / {safe(r.get('family_x'))} / {safe(r.get('Subfamily'))}<br>
+      <b>Depth (m):</b> {rng(r.get('depth_min_in_m'), r.get('depth_max_in_m'), '')}<br>
+      <b>Common depth (m):</b> {rng(r.get('common_depth_min'), r.get('common_depth_max'), '')}<br>
+      <b>Length (cm):</b> {rng(r.get('length_max_in_cm'), r.get('common_length_in_cm'), '')}<br>
+      <b>Weight (kg):</b> {rng(r.get('weight_max_in_g'), '')}<br>
+      <b>Temp (°C):</b> {rng(r.get('TempMin'), r.get('TempMax'), '')}<br>
+      <b>Source:</b> {safe(r.get('mr_source'))}
+    </div>
+    """
+
+    folium.CircleMarker(
+        [float(r["mr_latitude"]), float(r["mr_longitude"])],
+        radius=4, fill=True, fill_opacity=0.8,
+        popup=folium.Popup(popup_html, max_width=360),
+        tooltip=r.get("species_canonical", "record"),
+        weight=0.5
+    ).add_to(cluster)
+
+folium.LayerControl().add_to(m)
+m.save("species_map.html")
+print("Done -> species_map.html")
