@@ -1,0 +1,242 @@
+# This script is used in the Google colab to generate interative map on the colab
+# Input file:
+# data/merged/new_fianl_species.csv
+# data/merged/location_
+# 
+# Output:
+# Interative map on the colab
+
+# Install dependencies (Colab)
+!pip -q install folium ipywidgets
+
+import pandas as pd, numpy as np, folium
+from folium.plugins import MarkerCluster, Search, FloatImage
+import ipywidgets as widgets
+from IPython.display import display, HTML
+
+# Load Data
+species_df = pd.read_csv("/content/new_final_species.csv")
+location_df = pd.read_csv("/content/location_data.csv")
+
+# Merge
+df = location_df.merge(species_df, on="aphia_id", how="left")
+
+# Valid coordinates + remove duplicates
+df = df[
+    df["mr_latitude"].between(-90, 90) &
+    df["mr_longitude"].between(-180, 180)
+].drop_duplicates(subset=["aphia_id","species_canonical","mr_latitude","mr_longitude"]).copy()
+
+# Extract ranges for sliders
+temp_min = df['TempMin'].min()
+temp_max = df['TempMax'].max()
+depth_min = df['depth_min_in_m'].min()
+depth_max = df['depth_max_in_m'].max()
+length_min = df['length_max_in_cm'].min()
+length_max = df['length_max_in_cm'].max()
+
+# Utility functions: safe display & range formatting
+def safe(v):
+    return "—" if (pd.isna(v) or v in ("-", "[]")) else str(v)
+
+def rng(a, b, unit=""):
+    a_ok = not (pd.isna(a) or a in ("-", "[]"))
+    b_ok = not (pd.isna(b) or b in ("-", "[]"))
+    if not a_ok and not b_ok:
+        return "— — —" if not unit else f"— — — {unit}".strip()
+    if a_ok and b_ok:
+        return f"{a} – {b}{(' ' + unit) if unit else ''}"
+    only = a if a_ok else b
+    return f"{only}{(' ' + unit) if unit else ''}"
+
+# === Filtering function ===
+def filter_data(temp_range, depth_range, length_range):
+    """Filter data based on the slider range and retain NA value records"""
+    filtered_df = df.copy()
+    
+    # Temperature filter
+    if temp_range[0] is not None and temp_range[1] is not None:
+        temp_mask = (
+            (filtered_df['TempMin'].isna()) |  # keep NA value
+            (
+                (filtered_df['TempMin'] >= temp_range[0]) & 
+                (filtered_df['TempMax'] <= temp_range[1])
+            )
+        )
+        filtered_df = filtered_df[temp_mask]
+    
+    # Depth filter
+    if depth_range[0] is not None and depth_range[1] is not None:
+        depth_mask = (
+            (filtered_df['depth_min_in_m'].isna()) |  # keep NA value
+            (
+                (filtered_df['depth_min_in_m'] >= depth_range[0]) & 
+                (filtered_df['depth_max_in_m'] <= depth_range[1])
+            )
+        )
+        filtered_df = filtered_df[depth_mask]
+    
+    # Length filter
+    if length_range[0] is not None and length_range[1] is not None:
+        length_mask = (
+            (filtered_df['length_max_in_cm'].isna()) |  # keep NA value
+            (
+                (filtered_df['length_max_in_cm'] >= length_range[0]) & 
+                (filtered_df['length_max_in_cm'] <= length_range[1])
+            )
+        )
+        filtered_df = filtered_df[length_mask]
+    
+    return filtered_df
+
+# === Map creation function ===
+def create_map(temp_range=(temp_min, temp_max), 
+               depth_range=(depth_min, depth_max), 
+               length_range=(length_min, length_max)):
+    """Create a map with filtering"""
+    
+    # Filter data
+    filtered_df = filter_data(temp_range, depth_range, length_range)
+    
+    # Create map
+    m = folium.Map(
+        location=[filtered_df["mr_latitude"].median(), filtered_df["mr_longitude"].median()],
+        zoom_start=2, tiles="cartodbpositron"
+    )
+    
+    # Feature group for search
+    feature_group = folium.FeatureGroup(name="Species Records")
+    m.add_child(feature_group)
+    
+    cluster = MarkerCluster().add_to(feature_group)
+    
+    for _, r in filtered_df.iterrows():
+        species_name = safe(r.get('species_canonical'))
+        
+        popup_html = f"""
+        <div style='font-size:13px; line-height:1.35'>
+          <b>Species:</b> {species_name}<br>
+          <b>Locality:</b> {safe(r.get('locality'))}<br>
+          <b>Region:</b> {safe(r.get('higherGeography'))}<br>
+          <b>Genus/Order/Family/Subfamily:</b> {safe(r.get('Genus'))} / {safe(r.get('order'))} / {safe(r.get('family_x'))} / {safe(r.get('Subfamily'))}<br>
+          <b>Depth (m):</b> {rng(r.get('depth_min_in_m'), r.get('depth_max_in_m'), '')}<br>
+          <b>Common depth (m):</b> {rng(r.get('common_depth_min'), r.get('common_depth_max'), '')}<br>
+          <b>Length (cm):</b> {rng(r.get('length_max_in_cm'), r.get('common_length_in_cm'), '')}<br>
+          <b>Weight (kg):</b> {rng(r.get('weight_max_in_g'), '')}<br>
+          <b>Temp (°C):</b> {rng(r.get('TempMin'), r.get('TempMax'), '')}<br>
+          <b>Source:</b> {safe(r.get('mr_source'))}
+        </div>
+        """
+        
+        marker = folium.CircleMarker(
+            [float(r["mr_latitude"]), float(r["mr_longitude"])],
+            radius=4, 
+            fill=True, 
+            fill_opacity=0.8,
+            popup=folium.Popup(popup_html, max_width=360),
+            tooltip=species_name,
+            weight=0.5
+        )
+        
+        marker.options['species_canonical'] = species_name
+        marker.add_to(cluster)
+    
+    # Add search
+    species_search = Search(
+        layer=feature_group,
+        search_label='species_canonical',
+        placeholder='Search for species...',
+        collapsed=False,
+        position='topleft'
+    ).add_to(m)
+    
+    # Layer control
+    folium.LayerControl().add_to(m)
+    
+    return m, len(filtered_df)
+
+# === Sliders ===
+# Use actual data range (excluding NA)
+temp_data = df['TempMin'].dropna()
+depth_data = df['depth_min_in_m'].dropna()
+length_data = df['length_max_in_cm'].dropna()
+
+temp_min = temp_data.min() if not temp_data.empty else 0
+temp_max = temp_data.max() if not temp_data.empty else 30
+depth_min = depth_data.min() if not depth_data.empty else 0
+depth_max = depth_data.max() if not depth_data.empty else 1000
+length_min = length_data.min() if not length_data.empty else 0
+length_max = length_data.max() if not length_data.empty else 100
+
+# Temperature
+temp_slider = widgets.FloatRangeSlider(
+    value=[temp_min, temp_max],
+    min=temp_min,
+    max=temp_max,
+    step=0.1,
+    description='Temperature (°C):',
+    continuous_update=False
+)
+
+# Depth
+depth_slider = widgets.FloatRangeSlider(
+    value=[depth_min, depth_max],
+    min=depth_min,
+    max=depth_max,
+    step=1.0,
+    description='Depth (m):',
+    continuous_update=False
+)
+
+# Length
+length_slider = widgets.FloatRangeSlider(
+    value=[length_min, length_max],
+    min=length_min,
+    max=length_max,
+    step=1.0,
+    description='Length (cm):',
+    continuous_update=False
+)
+
+# Update button
+update_button = widgets.Button(description="Update Map")
+
+# Result label
+result_label = widgets.Label(value=f"Currently showing: {len(df)} records")
+
+# Map output
+map_output = widgets.Output()
+
+def update_map(button):
+    """Update map when filters are applied"""
+    with map_output:
+        map_output.clear_output()
+        m, count = create_map(
+            temp_slider.value,
+            depth_slider.value,
+            length_slider.value
+        )
+        result_label.value = f"Currently showing: {count} records (filtered)"
+        display(m)
+
+update_button.on_click(update_map)
+
+# Initial display
+initial_map, initial_count = create_map()
+result_label.value = f"Currently showing: {initial_count} records"
+
+# Show controls and map
+display(widgets.VBox([
+    widgets.HBox([temp_slider]),
+    widgets.HBox([depth_slider]),
+    widgets.HBox([length_slider]),
+    widgets.HBox([update_button, result_label]),
+    map_output
+]))
+
+# Initial map
+with map_output:
+    display(initial_map)
+
+print("Use sliders to select ranges, then click 'Update Map' to refresh results")
+print("Tip: Multiple filters can be used at the same time")
