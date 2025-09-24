@@ -4,7 +4,7 @@
 # data/merged/location_data.csv    # the location data from teammate
 
 # output file: 
-# data/visualization/species_map_search.html
+# data/visualization/species_map_search2.html
 
 # install the package in colab
 !pip -q install folium
@@ -16,7 +16,7 @@ from folium.plugins import MarkerCluster, Search
 species_df = pd.read_csv("/content/final_species.csv")
 location_df = pd.read_csv("/content/location_data.csv")
 
-# combine the dataset
+# combination
 df = location_df.merge(species_df, on="aphia_id", how="left")
 
 df = df[
@@ -48,8 +48,6 @@ m.add_child(feature_group)
 
 cluster = MarkerCluster().add_to(feature_group)
 
-all_markers = []
-
 for _, r in df.iterrows():
     species_name = safe(r.get('species_canonical'))
     
@@ -70,30 +68,27 @@ for _, r in df.iterrows():
 
     marker = folium.CircleMarker(
         [float(r["mr_latitude"]), float(r["mr_longitude"])],
-        radius=4, fill=True, fill_opacity=0.8,
+        radius=4, 
+        fill=True, 
+        fill_opacity=0.8,
         popup=folium.Popup(popup_html, max_width=360),
         tooltip=species_name,
         weight=0.5
     )
     
-    marker.options['species_name'] = species_name
-    
-    marker.__setattr__('species_canonical', species_name)
+    marker.options['species_canonical'] = species_name
     
     marker.add_to(cluster)
-    all_markers.append(marker)
 
 species_search = Search(
     layer=feature_group,
-    search_label='species_name', 
+    search_label='species_canonical',
     placeholder='Search for species...',
     collapsed=False,
-    position='topleft',
-    zoom_on_click=True
+    position='topleft'
 ).add_to(m)
 
 folium.LayerControl().add_to(m)
 
 # save the map
-m.save("species_map_search.html")
-
+m.save("species_map_search2.html")
