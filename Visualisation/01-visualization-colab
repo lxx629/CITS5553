@@ -1,13 +1,19 @@
 # This script is used on the Google colab to visualize the ocean species in the interactive map
+# Input file:
+# data/merged/new_fianl_species.csv
+# data/merged/location_data.csv    # the location data from teammate
 
-# install package in colab
+# output file: 
+# data/visualization/species_map_search.html
+
+# install the package in colab
 !pip -q install folium
 
 import pandas as pd, numpy as np, folium
-from folium.plugins import MarkerCluster
+from folium.plugins import MarkerCluster, Search
 
-# read the final merged dataset
-species_df = pd.read_csv("/content/new_final_species.csv")
+# read the dataset
+species_df = pd.read_csv("/content/final_species.csv")
 location_df = pd.read_csv("/content/location_data.csv")
 
 # combine the dataset
@@ -31,17 +37,25 @@ def rng(a, b, unit=""):
     only = a if a_ok else b
     return f"{only}{(' ' + unit) if unit else ''}"
 
-# make the interaction visualization
+# make the plot
 m = folium.Map(
     location=[df["mr_latitude"].median(), df["mr_longitude"].median()],
     zoom_start=2, tiles="cartodbpositron"
 )
-cluster = MarkerCluster(name="Species Records").add_to(m)
+
+feature_group = folium.FeatureGroup(name="Species Records")
+m.add_child(feature_group)
+
+cluster = MarkerCluster().add_to(feature_group)
+
+all_markers = []
 
 for _, r in df.iterrows():
+    species_name = safe(r.get('species_canonical'))
+    
     popup_html = f"""
     <div style='font-size:13px; line-height:1.35'>
-      <b>Species:</b> {safe(r.get('species_canonical'))}<br>
+      <b>Species:</b> {species_name}<br>
       <b>Locality:</b> {safe(r.get('locality'))}<br>
       <b>Region:</b> {safe(r.get('higherGeography'))}<br>
       <b>Genus/Order/Family/Subfamily:</b> {safe(r.get('Genus'))} / {safe(r.get('order'))} / {safe(r.get('family_x'))} / {safe(r.get('Subfamily'))}<br>
@@ -54,14 +68,32 @@ for _, r in df.iterrows():
     </div>
     """
 
-    folium.CircleMarker(
+    marker = folium.CircleMarker(
         [float(r["mr_latitude"]), float(r["mr_longitude"])],
         radius=4, fill=True, fill_opacity=0.8,
         popup=folium.Popup(popup_html, max_width=360),
-        tooltip=r.get("species_canonical", "record"),
+        tooltip=species_name,
         weight=0.5
-    ).add_to(cluster)
+    )
+    
+    marker.options['species_name'] = species_name
+    
+    marker.__setattr__('species_canonical', species_name)
+    
+    marker.add_to(cluster)
+    all_markers.append(marker)
+
+species_search = Search(
+    layer=feature_group,
+    search_label='species_name', 
+    placeholder='Search for species...',
+    collapsed=False,
+    position='topleft',
+    zoom_on_click=True
+).add_to(m)
 
 folium.LayerControl().add_to(m)
-m.save("species_map.html")
-print("Done -> species_map.html")
+
+# save the map
+m.save("species_map_search.html")
+
