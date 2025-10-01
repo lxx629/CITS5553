@@ -2,6 +2,9 @@
 
 This repository contains interactive dashboards built with Power BI.
 
+## Version 1: Marine Vertebrates Distribution
+The version 1 visualization in Power BI is a file in Visualization folder named "species_visual.pbix". It contains the initial map distribution. This version is without link.
+
 ## Version 2: Marine Vertebrates Distribution + Genome Sequencing Progress
 An interactive map showing the geographic distribution of marine species and 
 
